@@ -59,7 +59,7 @@ class MultiScaleSensors {
     bool active4;
 
     // Tare timeout period in milliseconds.
-    const long TARE_TIMEOUT = 5000;
+    const unsigned long TARE_TIMEOUT = 5000UL;  
 
     // Private helper functions.
     bool tareScale(HX711 &scale, const char* scaleName);
