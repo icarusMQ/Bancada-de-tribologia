@@ -2,6 +2,8 @@
 #define STEPPERMOTORCONTROLLER_H
 
 #include "Arduino.h"
+#include <Arduino_FreeRTOS.h>
+#include <semphr.h>
 
 // This class manages multiple stepper motors.
 // It provides functionality to run and stop motors with specified RPMs and directions.
@@ -23,8 +25,7 @@ class StepperMotorController {
     void StopMotor(uint8_t motorID);
 
   private:
-    // Pin definitions for the step and direction pins of each motor.
-    // These pins must be connected to the corresponding motor driver inputs.
+    // Pin definitions
     static const uint8_t MOTOR1_STEP_PIN = 2;
     static const uint8_t MOTOR1_DIR_PIN = 3;
     static const uint8_t MOTOR2_STEP_PIN = 4;
@@ -33,19 +34,21 @@ class StepperMotorController {
     static const uint8_t MOTOR3_DIR_PIN = 7;
     static const uint8_t MOTOR4_STEP_PIN = 8;
     static const uint8_t MOTOR4_DIR_PIN = 9;
-
-    // Helper function to set the RPM and direction for a motor.
-    // Parameters:
-    // - stepPin: The step pin of the motor.
-    // - dirPin: The direction pin of the motor.
-    // - rpm: The speed in revolutions per minute (RPM).
-    // - direction: The direction to run the motor (HIGH for forward, LOW for reverse).
-    void setMotorSpeed(uint8_t stepPin, uint8_t dirPin, int rpm, uint8_t direction);
-
-    // Helper function to stop a motor.
-    // Parameters:
-    // - stepPin: The step pin of the motor.
-    void stopMotor(uint8_t stepPin);
+    
+    // Constants
+    static const uint8_t MAX_MOTORS = 4;
+    
+    // Motor state arrays
+    bool motorRunning[MAX_MOTORS];  // Track if each motor is running
+    int motorSpeed[MAX_MOTORS];     // Current RPM of each motor
+    uint8_t motorDirection[MAX_MOTORS]; // Current direction of each motor
+    
+    // RTOS objects
+    SemaphoreHandle_t motorMutex;   // Mutex for motor state access
+    TaskHandle_t motorTaskHandle;   // Handle to the motor pulse task
+    
+    // Static task function for motor pulse generation
+    static void MotorPulseTask(void* pvParameters);
 };
 
 #endif

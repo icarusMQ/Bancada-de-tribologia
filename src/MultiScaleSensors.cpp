@@ -1,4 +1,5 @@
 #include "MultiScaleSensors.h"
+#include <Arduino_FreeRTOS.h>
 
 // Constructor: initialize variables.
 // This initializes the class variables, including the last stable readings
@@ -23,11 +24,14 @@ bool MultiScaleSensors::tareScale(HX711 &scale, const char* scaleName) {
   Serial.print("Taring ");
   Serial.print(scaleName);
   Serial.println("... Remove any load.");
-  delay(15000);  // Wait before taring to ensure the scale is unloaded.
+  
+  // Replace blocking delay with RTOS delay
+  vTaskDelay(pdMS_TO_TICKS(15000));  // Wait before taring to ensure the scale is unloaded.
 
   unsigned long startTime = millis();
   while (!scale.is_ready() && (millis() - startTime < TARE_TIMEOUT)) {
-    delay(50);  // Check periodically if the scale is ready.
+    // Replace blocking delay with RTOS delay
+    vTaskDelay(pdMS_TO_TICKS(50));  // Check periodically if the scale is ready.
   }
 
   if (scale.is_ready()) {
@@ -92,7 +96,8 @@ float MultiScaleSensors::getMedianReading(HX711 &scale, float cal, int numSample
       float weight = (raw - scale.get_offset()) * cal;  // Convert raw data to weight.
       validSamples[count++] = weight;  // Store the valid sample.
     }
-    delay(20);  // Delay between samples.
+    // Replace blocking delay with RTOS delay
+    vTaskDelay(pdMS_TO_TICKS(20));  // Delay between samples.
   }
   
   if (count == 0)
