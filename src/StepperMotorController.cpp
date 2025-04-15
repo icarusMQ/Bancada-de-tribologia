@@ -120,7 +120,7 @@ void StepperMotorController::MotorPulseTask(void* pvParameters) {
   // Main task loop
   for (;;) {
     // Lock access while getting motor parameters
-    if (xSemaphoreTake(controller->motorMutex, 5) == pdTRUE) {
+    if (xSemaphoreTake(controller->motorMutex, 10) == pdTRUE) {
       // Update step intervals based on current RPM
       for (int i = 0; i < MAX_MOTORS; i++) {
         if (controller->motorRunning[i] && controller->motorSpeed[i] > 0) {
@@ -137,7 +137,7 @@ void StepperMotorController::MotorPulseTask(void* pvParameters) {
     // Process each motor
     for (int i = 0; i < MAX_MOTORS; i++) {
       // Check if this motor should be running
-      if (xSemaphoreTake(controller->motorMutex, 0) == pdTRUE) {
+      if (xSemaphoreTake(controller->motorMutex, 10) == pdTRUE) {
         bool isRunning = controller->motorRunning[i];
         xSemaphoreGive(controller->motorMutex);
         

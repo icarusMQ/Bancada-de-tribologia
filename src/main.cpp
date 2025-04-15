@@ -68,7 +68,7 @@ void setup() {
   xTaskCreate(
     CommandHandlerTask,     // Task function
     "CommandHandler",       // Task name
-    128,                    // Stack size (words)
+    256,                    // Stack size (words)
     NULL,                   // Parameters
     3,                      // Priority (higher number = higher priority)
     NULL                    // Task handle
@@ -77,7 +77,7 @@ void setup() {
   xTaskCreate(
     LoadControlTask,
     "LoadControl",
-    128,
+    256,                    // Updated stack size (words)
     NULL,
     2,
     NULL
