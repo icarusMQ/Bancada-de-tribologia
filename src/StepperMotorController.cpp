@@ -10,6 +10,8 @@ StepperMotorController::StepperMotorController() {
   pinMode(MOTOR3_DIR_PIN, OUTPUT);
   pinMode(MOTOR4_STEP_PIN, OUTPUT);
   pinMode(MOTOR4_DIR_PIN, OUTPUT);
+  pinMode(MOTOR5_STEP_PIN, OUTPUT);
+  pinMode(MOTOR5_DIR_PIN, OUTPUT);
 }
 
 // Runs the specified motor at the given RPM and direction.
@@ -27,8 +29,11 @@ void StepperMotorController::RunMotor(uint8_t motorID, int rpm, uint8_t directio
     case 4:
       setMotorSpeed(MOTOR4_STEP_PIN, MOTOR4_DIR_PIN, rpm, direction);
       break;
+    case 5:
+      setMotorSpeed(MOTOR5_STEP_PIN, MOTOR5_DIR_PIN, rpm, direction);
+      break;
     default:
-      Serial.println("Invalid motor ID. Use 1, 2, 3, or 4.");
+      Serial.println("Invalid motor ID. Use 1, 2, 3, 4, or 5.");
       break;
   }
 }
@@ -48,8 +53,11 @@ void StepperMotorController::StopMotor(uint8_t motorID) {
     case 4:
       stopMotor(MOTOR4_STEP_PIN);
       break;
+    case 5:
+      stopMotor(MOTOR5_STEP_PIN);
+      break;
     default:
-      Serial.println("Invalid motor ID. Use 1, 2, 3, or 4.");
+      Serial.println("Invalid motor ID. Use 1, 2, 3, 4, or 5.");
       break;
   }
 }

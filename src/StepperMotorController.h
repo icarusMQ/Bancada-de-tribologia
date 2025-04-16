@@ -12,14 +12,14 @@ class StepperMotorController {
 
     // Runs the specified motor at the given RPM and direction.
     // Parameters:
-    // - motorID: The ID of the motor to run (1, 2, 3, or 4).
+    // - motorID: The ID of the motor to run (1, 2, 3, 4, or 5).
     // - rpm: The speed in revolutions per minute (RPM).
     // - direction: The direction to run the motor (HIGH for forward, LOW for reverse).
     void RunMotor(uint8_t motorID, int rpm, uint8_t direction);
 
     // Stops the specified motor.
     // Parameters:
-    // - motorID: The ID of the motor to stop (1, 2, 3, or 4).
+    // - motorID: The ID of the motor to stop (1, 2, 3, 4, or 5).
     void StopMotor(uint8_t motorID);
 
   private:
@@ -33,6 +33,8 @@ class StepperMotorController {
     static const uint8_t MOTOR3_DIR_PIN = 7;
     static const uint8_t MOTOR4_STEP_PIN = 8;
     static const uint8_t MOTOR4_DIR_PIN = 9;
+    static const uint8_t MOTOR5_STEP_PIN = 10;
+    static const uint8_t MOTOR5_DIR_PIN = 11;
 
     // Helper function to set the RPM and direction for a motor.
     // Parameters:
