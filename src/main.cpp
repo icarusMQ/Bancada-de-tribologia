@@ -1,7 +1,8 @@
-#include "MultiScaleSensors.h"
-#include "StepperMotorController.h"
 #include <Arduino_FreeRTOS.h>
 #include <semphr.h>
+#include "MultiScaleSensors.h"
+#include "StepperMotorController.h"
+
 
 // Global objects
 MultiScaleSensors sensors;

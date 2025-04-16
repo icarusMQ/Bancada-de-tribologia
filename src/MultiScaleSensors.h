@@ -1,9 +1,10 @@
 #ifndef MULTISCALESENSORS_H
 #define MULTISCALESENSORS_H
 
+#include <Arduino_FreeRTOS.h>  // Retain include if you use RTOS functions in tasks later
 #include "Arduino.h"
 #include "HX711.h"
-#include <Arduino_FreeRTOS.h>  // Retain include if you use RTOS functions in tasks later
+
 
 // This class manages multiple HX711-based load cells.
 // It provides functionality to initialize, tare, and read filtered weight values

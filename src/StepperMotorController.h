@@ -1,9 +1,9 @@
 #ifndef STEPPERMOTORCONTROLLER_H
 #define STEPPERMOTORCONTROLLER_H
 
-#include "Arduino.h"
 #include <Arduino_FreeRTOS.h>
 #include <semphr.h>
+#include "Arduino.h"
 
 // This class manages 5 stepper motors using FreeRTOS. It provides
 // deferred initialization (via begin()) so that RTOS functions are only used
