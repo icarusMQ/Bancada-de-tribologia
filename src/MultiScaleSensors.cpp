@@ -108,7 +108,6 @@ float MultiScaleSensors::getMedianReading(HX711 &scale, float cal, int numSample
 // Returns:
 // - true if at least one scale is active, false otherwise.
 bool MultiScaleSensors::BeginSensors() {
-  Serial.begin(115200);  // Start serial communication at 115200 baud.
 
   // Begin scale instances with pin assignments.
   scale1.begin(SCALE1_DT_PIN, SCALE1_SCK_PIN);
@@ -130,14 +129,16 @@ bool MultiScaleSensors::BeginSensors() {
 // Public: Returns the filtered reading for the given sensor.
 // This function reads the current weight from the specified sensor,
 // applies a smoothing filter to stabilize the reading, and returns
-// the filtered value. If the sensor is inactive or has no valid reading,
+// the filtered value in newtons. If the sensor is inactive or has no valid reading,
 // it returns 0.
 // Parameters:
 // - sensorID: The ID of the sensor to read (1, 2, 3, or 4).
 // Returns:
-// - The filtered weight reading for the specified sensor, or 0 if invalid.
+// - The filtered weight reading for the specified sensor in newtons, or 0 if invalid.
 float MultiScaleSensors::ReadSensor(uint8_t sensorID) {
-  float current = 0;  // Variable to store the current reading.
+  const float GRAMS_TO_NEWTONS = 0.00980665; // Conversion factor from grams to newtons
+  float current = 0;  // Variable to store the current reading in grams.
+
   switch(sensorID) {
     case 1:
       current = getMedianReading(scale1, calibration_factor1, NUM_SAMPLES, active1);
@@ -145,28 +146,28 @@ float MultiScaleSensors::ReadSensor(uint8_t sensorID) {
         lastStable1 = (1 - smoothingFactor) * lastStable1 + smoothingFactor * current;  // Apply smoothing.
       else
         lastStable1 = 0;  // Reset if inactive or invalid.
-      return lastStable1;
+      return lastStable1 * GRAMS_TO_NEWTONS; // Convert to newtons
     case 2:
       current = getMedianReading(scale2, calibration_factor2, NUM_SAMPLES, active2);
       if (active2 && current != 0)
         lastStable2 = (1 - smoothingFactor) * lastStable2 + smoothingFactor * current;  // Apply smoothing.
       else
         lastStable2 = 0;  // Reset if inactive or invalid.
-      return lastStable2;
+      return lastStable2 * GRAMS_TO_NEWTONS; // Convert to newtons
     case 3:
       current = getMedianReading(scale3, calibration_factor3, NUM_SAMPLES, active3);
       if (active3 && current != 0)
         lastStable3 = (1 - smoothingFactor) * lastStable3 + smoothingFactor * current;  // Apply smoothing.
       else
         lastStable3 = 0;  // Reset if inactive or invalid.
-      return lastStable3;
+      return lastStable3 * GRAMS_TO_NEWTONS; // Convert to newtons
     case 4:
       current = getMedianReading(scale4, calibration_factor4, NUM_SAMPLES, active4);
       if (active4 && current != 0)
         lastStable4 = (1 - smoothingFactor) * lastStable4 + smoothingFactor * current;  // Apply smoothing.
       else
         lastStable4 = 0;  // Reset if inactive or invalid.
-      return lastStable4;
+      return lastStable4 * GRAMS_TO_NEWTONS; // Convert to newtons
     default:
       Serial.println("Invalid sensor ID. Use 1, 2, 3, or 4.");  // Handle invalid sensor ID.
       return 0;
