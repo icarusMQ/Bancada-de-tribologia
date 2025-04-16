@@ -3,113 +3,118 @@
 #include <Arduino_FreeRTOS.h>
 #include <semphr.h>
 
-// Create instances of the libraries
+// Global objects
 MultiScaleSensors sensors;
 StepperMotorController motorController;
 
-// Constants for the experiment
-// Motors assignment:
-// 1 - Flow control for free sphere
-// 2 - Flow control for fixed sphere
-// 3 - Distance control for free sphere
-// 4 - Distance control for fixed sphere
-// 5 - Load control motor for free sphere (adjust position to change applied force)
-
-// Rotation speed setting (RPM)
+// Experiment parameters
 const int ROTATION_SPEED = 80;
-
-// Flow rate setting (simulating 30 drops per minute)
-const int FLOW_SPEED = 10; // Adjust this value to achieve 30 drops/min
-
-// Current experiment parameters
-float targetLoadFree = 0.1; // Starting with 0.1N for free sphere
-float targetLoadFixed = 5.0; // Starting with 5N for fixed sphere
+const int FLOW_SPEED = 10; // Simulating 30 drops/min (tweak as required)
+float targetLoadFree = 0.1;   // Free sphere load (N)
+float targetLoadFixed = 5.0;    // Fixed sphere load (N)
 bool experimentRunning = false;
 
-// RTOS synchronization objects
+// RTOS synchronization object for shared parameters.
 SemaphoreHandle_t paramMutex;
 
-// Task function prototypes
+// Task function prototypes.
+void InitTask(void *pvParameters);
 void CommandHandlerTask(void *pvParameters);
 void LoadControlTask(void *pvParameters);
 void SensorReadTask(void *pvParameters);
 void StatusReportTask(void *pvParameters);
 
-// Function prototypes
+// Function prototypes.
 void adjustFreeLoad(float currentLoad, float targetLoad);
 void startExperiment(float freeLoad, float fixedLoad);
 void stopExperiment();
 void printStatus();
 
 void setup() {
+  // Initialize Serial (only once).
   Serial.begin(115200);
+  while (!Serial) {
+    ; // Wait for Serial (particularly for boards like Leonardo)
+  }
+  // (Do not use any blocking delay() calls here that may interfere with scheduler startup.)
+  
   Serial.println("Tribology Experimental Setup with RTOS");
   Serial.println("-------------------------------------");
   
-  // Initialize sensors
-  if (!sensors.BeginSensors()) {
-    Serial.println("WARNING: No sensors responded properly during startup!");
-    Serial.println("Check connections and restart the system.");
-  } else {
-    Serial.println("Sensors initialized successfully.");
+  // Create the mutex for parameter protection.
+  paramMutex = xSemaphoreCreateMutex();
+  if (paramMutex == NULL) {
+    Serial.println("Error: Could not create paramMutex");
   }
   
-  Serial.println("\nExperiment ready. Send commands via Serial:");
-  Serial.println("start - Start experiment with current parameters");
-  Serial.println("stop - Stop experiment");
-  Serial.println("free:X.X - Set free sphere load (N)");
-  Serial.println("fixed:X.X - Set fixed sphere load (N)");
-  Serial.println("status - Display current status");
-
-  // Create mutex for parameter protection
-  paramMutex = xSemaphoreCreateMutex();
+  // Create the initialization task.
+  BaseType_t result;
+  result = xTaskCreate(InitTask, "InitTask", 256, NULL, 4, NULL);
+  if (result != pdPASS) {
+    Serial.println("Error: Could not create InitTask");
+  }
   
-  // Create RTOS tasks
-  xTaskCreate(
-    CommandHandlerTask,     // Task function
-    "CommandHandler",       // Task name
-    256,                    // Stack size (words)
-    NULL,                   // Parameters
-    3,                      // Priority (higher number = higher priority)
-    NULL                    // Task handle
-  );
+  // Create other RTOS tasks.
+  result = xTaskCreate(CommandHandlerTask, "CommandHandler", 300, NULL, 3, NULL);
+  if (result != pdPASS) {
+    Serial.println("Error: Could not create CommandHandlerTask");
+  }
   
-  xTaskCreate(
-    LoadControlTask,
-    "LoadControl",
-    256,                    // Updated stack size (words)
-    NULL,
-    2,
-    NULL
-  );
+  result = xTaskCreate(LoadControlTask, "LoadControl", 300, NULL, 2, NULL);
+  if (result != pdPASS) {
+    Serial.println("Error: Could not create LoadControlTask");
+  }
   
-  xTaskCreate(
-    SensorReadTask,
-    "SensorRead",
-    128,
-    NULL,
-    1,
-    NULL
-  );
+  result = xTaskCreate(SensorReadTask, "SensorRead", 200, NULL, 1, NULL);
+  if (result != pdPASS) {
+    Serial.println("Error: Could not create SensorReadTask");
+  }
   
-  xTaskCreate(
-    StatusReportTask,
-    "StatusReport",
-    128,
-    NULL,
-    1,
-    NULL
-  );
+  result = xTaskCreate(StatusReportTask, "StatusReport", 200, NULL, 1, NULL);
+  if (result != pdPASS) {
+    Serial.println("Error: Could not create StatusReportTask");
+  }
   
-  // Start the scheduler
+  // Start the FreeRTOS scheduler.
   vTaskStartScheduler();
 }
 
 void loop() {
-  // Empty - everything is handled by RTOS tasks
+  // Empty; all activities are managed by tasks.
 }
 
-// Task to handle serial commands
+/*--------------------------------------------------
+   InitTask:
+   This initialization task runs after the scheduler starts.
+   It performs sensor initialization and starts the motor
+   controller’s RTOS task (via motorController.begin()).
+---------------------------------------------------*/
+void InitTask(void *pvParameters) {
+  Serial.println("InitTask: Starting deferred initialization...");
+
+  // Sensor initialization.
+  // Replace blocking delay() calls in sensors.BeginSensors() with vTaskDelay()
+  // in the library so that we do not block the RTOS. (Update the MultiScaleSensors
+  // library accordingly.)
+  if (!sensors.BeginSensors()) {
+    Serial.println("WARNING: One or more sensors failed to initialize.");
+  } else {
+    Serial.println("Sensors initialized successfully.");
+  }
+
+  // Initialize the motor controller (which creates its motor pulse task).
+  motorController.begin();
+  Serial.println("Motor controller initialized.");
+
+  // Initialization complete, delete this task.
+  Serial.println("InitTask: Initialization complete. Deleting InitTask...");
+  vTaskDelete(NULL);
+}
+
+/*--------------------------------------------------
+   CommandHandlerTask:
+   Reads commands from Serial to control the experiment.
+---------------------------------------------------*/
 void CommandHandlerTask(void *pvParameters) {
   String command = "";
   char inChar;
@@ -117,30 +122,24 @@ void CommandHandlerTask(void *pvParameters) {
   for (;;) {
     if (Serial.available() > 0) {
       inChar = Serial.read();
-      
       if (inChar == '\n') {
         command.trim();
-        
         if (command == "start") {
-          // Take mutex before accessing shared parameters
           if (xSemaphoreTake(paramMutex, portMAX_DELAY) == pdTRUE) {
             startExperiment(targetLoadFree, targetLoadFixed);
             xSemaphoreGive(paramMutex);
           }
-        } 
-        else if (command == "stop") {
+        } else if (command == "stop") {
           if (xSemaphoreTake(paramMutex, portMAX_DELAY) == pdTRUE) {
             stopExperiment();
             xSemaphoreGive(paramMutex);
           }
-        }
-        else if (command == "status") {
+        } else if (command == "status") {
           if (xSemaphoreTake(paramMutex, portMAX_DELAY) == pdTRUE) {
             printStatus();
             xSemaphoreGive(paramMutex);
           }
-        }
-        else if (command.startsWith("free:")) {
+        } else if (command.startsWith("free:")) {
           float newLoad = command.substring(5).toFloat();
           if (xSemaphoreTake(paramMutex, portMAX_DELAY) == pdTRUE) {
             if (newLoad >= 0.05 && newLoad <= 1.0) {
@@ -153,8 +152,7 @@ void CommandHandlerTask(void *pvParameters) {
             }
             xSemaphoreGive(paramMutex);
           }
-        }
-        else if (command.startsWith("fixed:")) {
+        } else if (command.startsWith("fixed:")) {
           float newLoad = command.substring(6).toFloat();
           if (xSemaphoreTake(paramMutex, portMAX_DELAY) == pdTRUE) {
             if (newLoad >= 1.0 && newLoad <= 20.0) {
@@ -167,66 +165,68 @@ void CommandHandlerTask(void *pvParameters) {
             }
             xSemaphoreGive(paramMutex);
           }
-        }
-        else {
+        } else {
           Serial.println("Unknown command");
         }
-        
-        command = ""; // Clear command for next input
+        command = "";
       } else {
         command += inChar;
       }
     }
-    vTaskDelay(50 / portTICK_PERIOD_MS); // Small delay to prevent CPU hogging
+    vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 }
 
-// Task to control the load of the free sphere
+/*--------------------------------------------------
+   LoadControlTask:
+   Manages the free sphere load via sensor feedback and adjusts
+   motor 5 accordingly.
+---------------------------------------------------*/
 void LoadControlTask(void *pvParameters) {
   float currentLoad, targetLoad;
   bool running;
   
   for (;;) {
-    // Take mutex before accessing shared parameters
     if (xSemaphoreTake(paramMutex, portMAX_DELAY) == pdTRUE) {
       running = experimentRunning;
       targetLoad = targetLoadFree;
       xSemaphoreGive(paramMutex);
       
       if (running) {
-        currentLoad = sensors.ReadSensor(1); // Free sphere load sensor
+        currentLoad = sensors.ReadSensor(1); // Free sphere sensor
         adjustFreeLoad(currentLoad, targetLoad);
       }
     }
-    
-    vTaskDelay(200 / portTICK_PERIOD_MS); // Adjust load every 200ms
+    vTaskDelay(200 / portTICK_PERIOD_MS);
   }
 }
 
-// Task to read and store sensor values
+/*--------------------------------------------------
+   SensorReadTask:
+   Periodically reads sensor values.
+---------------------------------------------------*/
 void SensorReadTask(void *pvParameters) {
   float freeSphereLoad, fixedSphereLoad, auxSensor1, auxSensor2;
   
   for (;;) {
-    // Read all sensors
     freeSphereLoad = sensors.ReadSensor(1);
     fixedSphereLoad = sensors.ReadSensor(2);
     auxSensor1 = sensors.ReadSensor(3);
     auxSensor2 = sensors.ReadSensor(4);
     
-    // Optionally, store values in a data buffer or SD card
-    // This task could be expanded for data logging
-    
-    vTaskDelay(100 / portTICK_PERIOD_MS); // Read sensors every 100ms
+    // Optionally store or log the sensor data.
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
-// Task to report status periodically
+/*--------------------------------------------------
+   StatusReportTask:
+   Periodically prints the status of the experiment.
+---------------------------------------------------*/
 void StatusReportTask(void *pvParameters) {
   bool running;
   
   for (;;) {
-    // Take mutex before accessing shared parameters
     if (xSemaphoreTake(paramMutex, portMAX_DELAY) == pdTRUE) {
       running = experimentRunning;
       xSemaphoreGive(paramMutex);
@@ -239,19 +239,21 @@ void StatusReportTask(void *pvParameters) {
         
         Serial.print("Free sphere: ");
         Serial.print(freeSphereLoad, 2);
-        Serial.print("N | Fixed sphere: ");
+        Serial.print(" N | Fixed sphere: ");
         Serial.print(fixedSphereLoad, 2);
-        Serial.print("N | Aux1: ");
+        Serial.print(" N | Aux1: ");
         Serial.print(auxSensor1, 2);
         Serial.print(" | Aux2: ");
         Serial.println(auxSensor2, 2);
       }
+      vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
-    
-    vTaskDelay(1000 / portTICK_PERIOD_MS); // Report every 1 second
   }
 }
 
+/*--------------------------------------------------
+   Experiment Control Functions
+---------------------------------------------------*/
 void startExperiment(float freeLoad, float fixedLoad) {
   if (experimentRunning) {
     Serial.println("Experiment already running");
@@ -269,11 +271,11 @@ void startExperiment(float freeLoad, float fixedLoad) {
   Serial.println("- Flow rate: 30 drops/min");
   Serial.println("- Distance: 30 meters");
   
-  // Start flow control motors (1 and 2)
+  // Start flow control motors: motors 1 & 2.
   motorController.RunMotor(1, FLOW_SPEED, HIGH);
   motorController.RunMotor(2, FLOW_SPEED, HIGH);
   
-  // Start rotation motors (3 and 4) at 80 RPM
+  // Start rotation motors: motors 3 & 4.
   motorController.RunMotor(3, ROTATION_SPEED, HIGH);
   motorController.RunMotor(4, ROTATION_SPEED, HIGH);
   
@@ -286,7 +288,7 @@ void stopExperiment() {
     return;
   }
   
-  // Stop all motors
+  // Stop all motors (motors 1 to 5).
   for (int i = 1; i <= 5; i++) {
     motorController.StopMotor(i);
   }
@@ -296,32 +298,24 @@ void stopExperiment() {
 }
 
 void adjustFreeLoad(float currentLoad, float targetLoad) {
-  // Simple proportional control for the load
-  // Motor 5 controls the position of the loading mechanism
-  
-  // Calculate error
   float error = targetLoad - currentLoad;
   
-  // If load is within acceptable range (±5%), do nothing
+  // If within ±5%, no adjustment is needed.
   if (abs(error) < (targetLoad * 0.05)) {
     motorController.StopMotor(5);
     return;
   }
   
-  // Determine direction and speed based on error
-  uint8_t direction = (error > 0) ? HIGH : LOW; // HIGH to increase load, LOW to decrease
+  // Determine motor direction.
+  uint8_t direction = (error > 0) ? HIGH : LOW;
   
-  // Calculate a proportional speed (larger error = faster adjustment)
-  // Limit speed between 5 and 20 RPM for precise control
+  // Calculate a proportional speed between 5 and 20 RPM.
   int speed = constrain(abs(error) * 20, 5, 20);
-  
-  // Run the motor to adjust the load
   motorController.RunMotor(5, speed, direction);
   
-  // Add a small delay to allow the mechanism to move
+  // Allow a brief adjustment interval.
   vTaskDelay(100 / portTICK_PERIOD_MS);
   
-  // Stop the motor to prevent overshooting
   motorController.StopMotor(5);
 }
 

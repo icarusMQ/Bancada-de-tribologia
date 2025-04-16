@@ -1,41 +1,31 @@
 #include "MultiScaleSensors.h"
-#include <Arduino_FreeRTOS.h>
 
-// Constructor: initialize variables.
-// This initializes the class variables, including the last stable readings
-// for each scale and their active states.
+// Constructor: Initialize member variables.
 MultiScaleSensors::MultiScaleSensors() : 
   lastStable1(0), lastStable2(0), lastStable3(0), lastStable4(0),
   active1(false), active2(false), active3(false), active4(false)
 {
-  // Nothing further needed here.
+  // Nothing else required in constructor.
 }
 
-// Helper: Tare a scale with timeout.
-// This function tars (zeros) a specific scale. It waits for the scale to be ready
-// and then performs the tare operation. If the scale does not respond within
-// the timeout period, it skips the scale and marks it as inactive.
-// Parameters:
-// - scale: The HX711 object representing the scale.
-// - scaleName: A string representing the name of the scale (e.g., "Scale 1").
-// Returns:
-// - true if the scale was successfully tared, false otherwise.
+// Helper: Tare a scale with a timeout.
+// Uses blocking delay() calls to allow taring during initialization.
 bool MultiScaleSensors::tareScale(HX711 &scale, const char* scaleName) {
   Serial.print("Taring ");
   Serial.print(scaleName);
   Serial.println("... Remove any load.");
   
-  // Replace blocking delay with RTOS delay
-  vTaskDelay(pdMS_TO_TICKS(15000));  // Wait before taring to ensure the scale is unloaded.
+ 
+  vTaskDelay(15000 / portTICK_PERIOD_MS);  // Wait for 15 seconds to ensure scale is unloaded.
 
   unsigned long startTime = millis();
   while (!scale.is_ready() && (millis() - startTime < TARE_TIMEOUT)) {
-    // Replace blocking delay with RTOS delay
-    vTaskDelay(pdMS_TO_TICKS(50));  // Check periodically if the scale is ready.
+   
+    vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 
   if (scale.is_ready()) {
-    scale.tare();  // Perform the tare operation.
+    scale.tare();  // Perform the tare.
     Serial.print(scaleName);
     Serial.println(" is ready.");
     return true;
@@ -46,16 +36,9 @@ bool MultiScaleSensors::tareScale(HX711 &scale, const char* scaleName) {
   }
 }
 
-// Helper: Compute the median of an array of floats.
-// This function calculates the median value of an array of floats using
-// a simple insertion sort algorithm to sort the array.
-// Parameters:
-// - arr: The array of float values.
-// - n: The number of elements in the array.
-// Returns:
-// - The median value of the array.
+// Helper: Compute the median value for an array of floats.
 float MultiScaleSensors::computeMedian(float arr[], int n) {
-  // Sort the array using insertion sort.
+  // Insertion sort.
   for (int i = 1; i < n; i++) {
     float key = arr[i];
     int j = i - 1;
@@ -66,62 +49,47 @@ float MultiScaleSensors::computeMedian(float arr[], int n) {
     arr[j + 1] = key;
   }
   
-  // Return the median value.
+  // Return median value.
   if (n % 2 == 1)
-    return arr[n / 2];  // Odd number of elements.
+    return arr[n / 2];
   else
-    return (arr[(n - 1) / 2] + arr[n / 2]) / 2.0;  // Even number of elements.
+    return (arr[(n - 1) / 2] + arr[n / 2]) / 2.0;
 }
 
-// Helper: Read a batch from a given scale and return the median weight.
-// This function reads multiple samples from a scale, calculates the weight
-// for each sample, and returns the median weight. If the scale is inactive
-// or no valid samples are collected, it returns 0.
-// Parameters:
-// - scale: The HX711 object representing the scale.
-// - cal: The calibration factor for the scale.
-// - numSamples: The number of samples to read.
-// - isActive: Whether the scale is active.
-// Returns:
-// - The median weight of the valid samples, or 0 if no valid samples are collected.
+// Helper: Read a batch from a scale and return the median value.
 float MultiScaleSensors::getMedianReading(HX711 &scale, float cal, int numSamples, bool isActive) {
-  if (!isActive) return 0;  // Return 0 if the scale is inactive.
+  if (!isActive) return 0;
 
-  float validSamples[NUM_SAMPLES];  // Array to store valid samples.
-  int count = 0;  // Counter for valid samples.
+  float validSamples[NUM_SAMPLES];
+  int count = 0;
   
   for (int i = 0; i < numSamples; i++) {
     if (scale.is_ready()) {
-      long raw = scale.read();  // Read raw data from the scale.
-      float weight = (raw - scale.get_offset()) * cal;  // Convert raw data to weight.
-      validSamples[count++] = weight;  // Store the valid sample.
+      long raw = scale.read();
+      float weight = (raw - scale.get_offset()) * cal;
+      validSamples[count++] = weight;
     }
-    // Replace blocking delay with RTOS delay
-    vTaskDelay(pdMS_TO_TICKS(20));  // Delay between samples.
+    // Use vTaskDelay instead of Arduino delay.
+    vTaskDelay(20 / portTICK_PERIOD_MS);
   }
   
   if (count == 0)
-    return 0;  // Return 0 if no valid samples were collected.
+    return 0;
   else
-    return computeMedian(validSamples, count);  // Return the median of the valid samples.
+    return computeMedian(validSamples, count);
 }
 
-// Public: Initialize all sensors.
-// This function initializes all the scales by setting up their pins,
-// starting their communication, and taring them. It also determines
-// which scales are active based on the success of the taring process.
-// Returns:
-// - true if at least one scale is active, false otherwise.
+// Public: Initialize and tare all sensors.
 bool MultiScaleSensors::BeginSensors() {
-  Serial.begin(115200);  // Start serial communication at 115200 baud.
-
+  Serial.println("Initializing scales...");
+  
   // Begin scale instances with pin assignments.
   scale1.begin(SCALE1_DT_PIN, SCALE1_SCK_PIN);
   scale2.begin(SCALE2_DT_PIN, SCALE2_SCK_PIN);
   scale3.begin(SCALE3_DT_PIN, SCALE3_SCK_PIN);
   scale4.begin(SCALE4_DT_PIN, SCALE4_SCK_PIN);
 
-  // Tare each sensor and determine if it is active.
+  // Tare each scale.
   active1 = tareScale(scale1, "Scale 1");
   active2 = tareScale(scale2, "Scale 2");
   active3 = tareScale(scale3, "Scale 3");
@@ -129,51 +97,45 @@ bool MultiScaleSensors::BeginSensors() {
 
   Serial.println("\nTare process complete. Active scales will be read; inactive scales will be 0.");
   Serial.println("Starting data output for Serial Plotter...");
-  return (active1 || active2 || active3 || active4);  // Return true if any scale is active.
+  
+  // Return true if at least one scale is active.
+  return (active1 || active2 || active3 || active4);
 }
 
-// Public: Returns the filtered reading for the given sensor.
-// This function reads the current weight from the specified sensor,
-// applies a smoothing filter to stabilize the reading, and returns
-// the filtered value. If the sensor is inactive or has no valid reading,
-// it returns 0.
-// Parameters:
-// - sensorID: The ID of the sensor to read (1, 2, 3, or 4).
-// Returns:
-// - The filtered weight reading for the specified sensor, or 0 if invalid.
+// Public: Return filtered reading for a given sensor.
 float MultiScaleSensors::ReadSensor(uint8_t sensorID) {
-  float current = 0;  // Variable to store the current reading.
+  float current = 0;
   switch(sensorID) {
     case 1:
       current = getMedianReading(scale1, calibration_factor1, NUM_SAMPLES, active1);
       if (active1 && current != 0)
-        lastStable1 = (1 - smoothingFactor) * lastStable1 + smoothingFactor * current;  // Apply smoothing.
+        lastStable1 = (1 - smoothingFactor) * lastStable1 + smoothingFactor * current;
       else
-        lastStable1 = 0;  // Reset if inactive or invalid.
+        lastStable1 = 0;
       return lastStable1;
     case 2:
       current = getMedianReading(scale2, calibration_factor2, NUM_SAMPLES, active2);
       if (active2 && current != 0)
-        lastStable2 = (1 - smoothingFactor) * lastStable2 + smoothingFactor * current;  // Apply smoothing.
+        lastStable2 = (1 - smoothingFactor) * lastStable2 + smoothingFactor * current;
       else
-        lastStable2 = 0;  // Reset if inactive or invalid.
+        lastStable2 = 0;
       return lastStable2;
     case 3:
       current = getMedianReading(scale3, calibration_factor3, NUM_SAMPLES, active3);
       if (active3 && current != 0)
-        lastStable3 = (1 - smoothingFactor) * lastStable3 + smoothingFactor * current;  // Apply smoothing.
+        lastStable3 = (1 - smoothingFactor) * lastStable3 + smoothingFactor * current;
       else
-        lastStable3 = 0;  // Reset if inactive or invalid.
+        lastStable3 = 0;
       return lastStable3;
     case 4:
       current = getMedianReading(scale4, calibration_factor4, NUM_SAMPLES, active4);
       if (active4 && current != 0)
-        lastStable4 = (1 - smoothingFactor) * lastStable4 + smoothingFactor * current;  // Apply smoothing.
+        lastStable4 = (1 - smoothingFactor) * lastStable4 + smoothingFactor * current;
       else
-        lastStable4 = 0;  // Reset if inactive or invalid.
+        lastStable4 = 0;
       return lastStable4;
     default:
-      Serial.println("Invalid sensor ID. Use 1, 2, 3, or 4.");  // Handle invalid sensor ID.
+      Serial.println("Invalid sensor ID. Use 1, 2, 3, or 4.");
       return 0;
   }
 }

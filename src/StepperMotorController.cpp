@@ -1,8 +1,7 @@
 #include "StepperMotorController.h"
-#include <Arduino_FreeRTOS.h>
 
-// Constructor: Initializes the class variables and sets up the motor pins.
 StepperMotorController::StepperMotorController() {
+  // Initialize motor pins.
   pinMode(MOTOR1_STEP_PIN, OUTPUT);
   pinMode(MOTOR1_DIR_PIN, OUTPUT);
   pinMode(MOTOR2_STEP_PIN, OUTPUT);
@@ -11,165 +10,139 @@ StepperMotorController::StepperMotorController() {
   pinMode(MOTOR3_DIR_PIN, OUTPUT);
   pinMode(MOTOR4_STEP_PIN, OUTPUT);
   pinMode(MOTOR4_DIR_PIN, OUTPUT);
+  pinMode(MOTOR5_STEP_PIN, OUTPUT);
+  pinMode(MOTOR5_DIR_PIN, OUTPUT);
   
-  // Initialize motor states
+  // Initialize motor state arrays.
   for (int i = 0; i < MAX_MOTORS; i++) {
     motorRunning[i] = false;
     motorSpeed[i] = 0;
     motorDirection[i] = HIGH;
   }
   
-  // Create a semaphore for motor control access
+  // Create a mutex for motor access.
   motorMutex = xSemaphoreCreateMutex();
-  
-  // Create task for motor pulse generation
-  xTaskCreate(
-    MotorPulseTask,        // Task function
-    "MotorPulseTask",      // Task name
-    128,                   // Stack size (words)
-    this,                  // Task parameters (pass the object pointer)
-    3,                     // Priority
-    &motorTaskHandle       // Task handle
+  // Note: Do not call any RTOS tasks here; use begin() instead.
+  motorTaskHandle = NULL;
+}
+
+void StepperMotorController::begin() {
+  // Create the MotorPulseTask after the scheduler is running.
+  BaseType_t result = xTaskCreate(
+    MotorPulseTask,         // Task function
+    "MotorPulseTask",       // Task name
+    256,                    // Stack size (words)
+    this,                   // Task parameter (pass this instance)
+    3,                      // Priority
+    &motorTaskHandle        // Task handle
   );
+  
+  if(result != pdPASS) {
+    Serial.println("Error: Could not create MotorPulseTask");
+  }
 }
 
-// Runs the specified motor at the given RPM and direction.
+// Run a motor (1 to 5) with the given RPM and direction.
 void StepperMotorController::RunMotor(uint8_t motorID, int rpm, uint8_t direction) {
-  // Validate motor ID
   if (motorID < 1 || motorID > MAX_MOTORS) {
-    Serial.println("Invalid motor ID. Use 1, 2, 3, or 4.");
+    Serial.println("Invalid motor ID. Use 1 to 5.");
     return;
   }
   
-  // Convert to zero-based index
-  uint8_t motorIndex = motorID - 1;
-  
-  // Get mutex before updating motor parameters
+  uint8_t index = motorID - 1;
   if (xSemaphoreTake(motorMutex, portMAX_DELAY) == pdTRUE) {
-    // Update motor parameters
-    motorRunning[motorIndex] = true;
-    motorSpeed[motorIndex] = rpm;
-    motorDirection[motorIndex] = direction;
+    motorRunning[index] = true;
+    motorSpeed[index] = rpm;
+    motorDirection[index] = direction;
     
-    // Set direction pin
+    // Update the direction pin.
     switch(motorID) {
-      case 1:
-        digitalWrite(MOTOR1_DIR_PIN, direction);
-        break;
-      case 2:
-        digitalWrite(MOTOR2_DIR_PIN, direction);
-        break;
-      case 3:
-        digitalWrite(MOTOR3_DIR_PIN, direction);
-        break;
-      case 4:
-        digitalWrite(MOTOR4_DIR_PIN, direction);
-        break;
+      case 1: digitalWrite(MOTOR1_DIR_PIN, direction); break;
+      case 2: digitalWrite(MOTOR2_DIR_PIN, direction); break;
+      case 3: digitalWrite(MOTOR3_DIR_PIN, direction); break;
+      case 4: digitalWrite(MOTOR4_DIR_PIN, direction); break;
+      case 5: digitalWrite(MOTOR5_DIR_PIN, direction); break;
     }
-    
     xSemaphoreGive(motorMutex);
   }
 }
 
-// Stops the specified motor.
+// Stop a motor (1 to 5).
 void StepperMotorController::StopMotor(uint8_t motorID) {
-  // Validate motor ID
   if (motorID < 1 || motorID > MAX_MOTORS) {
-    Serial.println("Invalid motor ID. Use 1, 2, 3, or 4.");
+    Serial.println("Invalid motor ID. Use 1 to 5.");
     return;
   }
   
-  // Convert to zero-based index
-  uint8_t motorIndex = motorID - 1;
-  
-  // Get mutex before updating motor parameters
+  uint8_t index = motorID - 1;
   if (xSemaphoreTake(motorMutex, portMAX_DELAY) == pdTRUE) {
-    // Update motor parameters
-    motorRunning[motorIndex] = false;
+    motorRunning[index] = false;
     
-    // Ensure motor step pin is low
+    // Ensure the step pin is low.
     switch(motorID) {
-      case 1:
-        digitalWrite(MOTOR1_STEP_PIN, LOW);
-        break;
-      case 2:
-        digitalWrite(MOTOR2_STEP_PIN, LOW);
-        break;
-      case 3:
-        digitalWrite(MOTOR3_STEP_PIN, LOW);
-        break;
-      case 4:
-        digitalWrite(MOTOR4_STEP_PIN, LOW);
-        break;
+      case 1: digitalWrite(MOTOR1_STEP_PIN, LOW); break;
+      case 2: digitalWrite(MOTOR2_STEP_PIN, LOW); break;
+      case 3: digitalWrite(MOTOR3_STEP_PIN, LOW); break;
+      case 4: digitalWrite(MOTOR4_STEP_PIN, LOW); break;
+      case 5: digitalWrite(MOTOR5_STEP_PIN, LOW); break;
     }
     
     xSemaphoreGive(motorMutex);
   }
 }
 
-// Static task function for motor pulse generation
+// MotorPulseTask: generates pulses for each active motor.
+// Note: This task assumes 200 steps per revolution for calculating step intervals.
 void StepperMotorController::MotorPulseTask(void* pvParameters) {
-  // Get a pointer to the controller instance
-  StepperMotorController* controller = (StepperMotorController*)pvParameters;
+  StepperMotorController* controller = (StepperMotorController*) pvParameters;
   
-  // Motor timing variables
+  // Timing and state arrays for each motor.
   unsigned long lastStepTime[MAX_MOTORS] = {0};
   unsigned long stepInterval[MAX_MOTORS] = {0};
   bool stepState[MAX_MOTORS] = {false};
   
-  // Main task loop
-  for (;;) {
-    // Lock access while getting motor parameters
+  for(;;) {
+    // Update step intervals based on current RPM.
     if (xSemaphoreTake(controller->motorMutex, 10) == pdTRUE) {
-      // Update step intervals based on current RPM
       for (int i = 0; i < MAX_MOTORS; i++) {
         if (controller->motorRunning[i] && controller->motorSpeed[i] > 0) {
-          // Calculate step interval in microseconds
+          // Calculate the step interval (in microseconds).
           stepInterval[i] = 60000000UL / (200 * controller->motorSpeed[i]);
+        } else {
+          stepInterval[i] = 0;
         }
       }
       xSemaphoreGive(controller->motorMutex);
     }
     
-    // Current time in microseconds
     unsigned long currentMicros = micros();
-    
-    // Process each motor
+    // Process each motor.
     for (int i = 0; i < MAX_MOTORS; i++) {
-      // Check if this motor should be running
+      // Check motor state.
       if (xSemaphoreTake(controller->motorMutex, 10) == pdTRUE) {
-        bool isRunning = controller->motorRunning[i];
+        bool running = controller->motorRunning[i];
         xSemaphoreGive(controller->motorMutex);
         
-        if (isRunning && stepInterval[i] > 0) {
-          // Calculate if it's time for a step
-          if (currentMicros - lastStepTime[i] >= (stepState[i] ? stepInterval[i]/2 : stepInterval[i]/2)) {
+        if (running && stepInterval[i] > 0) {
+          // Toggle the motor step pin when the time for a half-period has elapsed.
+          if (currentMicros - lastStepTime[i] >= (stepInterval[i] / 2)) {
             lastStepTime[i] = currentMicros;
-            
-            // Toggle step pin state
             stepState[i] = !stepState[i];
             
-            // Set the appropriate pin
-            switch(i+1) { // Convert back to 1-based index
-              case 1:
-                digitalWrite(controller->MOTOR1_STEP_PIN, stepState[i] ? HIGH : LOW);
-                break;
-              case 2:
-                digitalWrite(controller->MOTOR2_STEP_PIN, stepState[i] ? HIGH : LOW);
-                break;
-              case 3:
-                digitalWrite(controller->MOTOR3_STEP_PIN, stepState[i] ? HIGH : LOW);
-                break;
-              case 4:
-                digitalWrite(controller->MOTOR4_STEP_PIN, stepState[i] ? HIGH : LOW);
-                break;
+            // Set the step pin based on motor index.
+            switch(i + 1) {
+              case 1: digitalWrite(controller->MOTOR1_STEP_PIN, stepState[i] ? HIGH : LOW); break;
+              case 2: digitalWrite(controller->MOTOR2_STEP_PIN, stepState[i] ? HIGH : LOW); break;
+              case 3: digitalWrite(controller->MOTOR3_STEP_PIN, stepState[i] ? HIGH : LOW); break;
+              case 4: digitalWrite(controller->MOTOR4_STEP_PIN, stepState[i] ? HIGH : LOW); break;
+              case 5: digitalWrite(controller->MOTOR5_STEP_PIN, stepState[i] ? HIGH : LOW); break;
             }
           }
         }
       }
     }
     
-    // Short delay to prevent task from hogging CPU
-    vTaskDelay(1); // Just yield to other tasks
+    // Short delay to yield to other tasks.
+    vTaskDelay(1);
   }
 }
