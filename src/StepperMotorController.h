@@ -25,16 +25,16 @@ class StepperMotorController {
   private:
     // Pin definitions for the step and direction pins of each motor.
     // These pins must be connected to the corresponding motor driver inputs.
-    static const uint8_t MOTOR1_STEP_PIN = 2;
-    static const uint8_t MOTOR1_DIR_PIN = 3;
-    static const uint8_t MOTOR2_STEP_PIN = 4;
-    static const uint8_t MOTOR2_DIR_PIN = 5;
-    static const uint8_t MOTOR3_STEP_PIN = 6;
-    static const uint8_t MOTOR3_DIR_PIN = 7;
-    static const uint8_t MOTOR4_STEP_PIN = 8;
-    static const uint8_t MOTOR4_DIR_PIN = 9;
-    static const uint8_t MOTOR5_STEP_PIN = 10;
-    static const uint8_t MOTOR5_DIR_PIN = 11;
+    static const uint8_t MOTOR1_STEP_PIN = 10;
+    static const uint8_t MOTOR1_DIR_PIN = 9;
+    static const uint8_t MOTOR2_STEP_PIN = 5;
+    static const uint8_t MOTOR2_DIR_PIN = 9;
+    static const uint8_t MOTOR3_STEP_PIN = A1;
+    static const uint8_t MOTOR3_DIR_PIN = A0;
+    static const uint8_t MOTOR4_STEP_PIN = A2;
+    static const uint8_t MOTOR4_DIR_PIN = A4;
+    static const uint8_t MOTOR5_STEP_PIN = A3;
+    static const uint8_t MOTOR5_DIR_PIN = A5;
 
     // Helper function to set the RPM and direction for a motor.
     // Parameters:
