@@ -3,51 +3,62 @@
 
 #include "Arduino.h"
 
-// This class manages multiple stepper motors.
-// It provides functionality to run and stop motors with specified RPMs and directions.
+// Improved stepper motor controller with fixed direction control
 class StepperMotorController {
   public:
-    // Constructor: Initializes the class variables.
+    // Constructor
     StepperMotorController();
-
-    // Runs the specified motor at the given RPM and direction.
-    // Parameters:
-    // - motorID: The ID of the motor to run (1, 2, 3, 4, or 5).
-    // - rpm: The speed in revolutions per minute (RPM).
-    // - direction: The direction to run the motor (HIGH for forward, LOW for reverse).
-    void RunMotor(uint8_t motorID, int rpm, uint8_t direction);
-
-    // Stops the specified motor.
-    // Parameters:
-    // - motorID: The ID of the motor to stop (1, 2, 3, 4, or 5).
-    void StopMotor(uint8_t motorID);
-
+    
+    // Initialize pins and state
+    void init();
+    
+    // Set target speed for a motor
+    // motorID: 1-5 for the physical motor
+    // rpm: the target rotation speed
+    // direction: HIGH for forward, LOW for reverse
+    void setMotorSpeed(uint8_t motorID, uint8_t rpm, uint8_t direction);
+    
+    // Stop a specific motor
+    void stopMotor(uint8_t motorID);
+    
+    // Stop all motors
+    void stopAllMotors();
+    
+    // Must be called in the main loop for non-blocking operation
+    void update();
+    
+    // Check if a particular motor is running
+    bool isMotorRunning(uint8_t motorID);
+    
   private:
-    // Pin definitions for the step and direction pins of each motor.
-    // These pins must be connected to the corresponding motor driver inputs.
-    static const uint8_t MOTOR1_STEP_PIN = 10;
-    static const uint8_t MOTOR1_DIR_PIN = 9;
-    static const uint8_t MOTOR2_STEP_PIN = 5;
-    static const uint8_t MOTOR2_DIR_PIN = 9;
-    static const uint8_t MOTOR3_STEP_PIN = A1;
-    static const uint8_t MOTOR3_DIR_PIN = A0;
-    static const uint8_t MOTOR4_STEP_PIN = A2;
-    static const uint8_t MOTOR4_DIR_PIN = A4;
-    static const uint8_t MOTOR5_STEP_PIN = A3;
-    static const uint8_t MOTOR5_DIR_PIN = A5;
-
-    // Helper function to set the RPM and direction for a motor.
-    // Parameters:
-    // - stepPin: The step pin of the motor.
-    // - dirPin: The direction pin of the motor.
-    // - rpm: The speed in revolutions per minute (RPM).
-    // - direction: The direction to run the motor (HIGH for forward, LOW for reverse).
-    void setMotorSpeed(uint8_t stepPin, uint8_t dirPin, int rpm, uint8_t direction);
-
-    // Helper function to stop a motor.
-    // Parameters:
-    // - stepPin: The step pin of the motor.
-    void stopMotor(uint8_t stepPin);
+    // Status bits for each motor (packed in one byte)
+    uint8_t _motorStatus;
+    
+    // Current step states
+    uint8_t _stepStates[5];
+    
+    // Speed and timing data
+    uint8_t _motorSpeeds[5];
+    uint8_t _motorDirections[5];
+    unsigned long _lastStepTime[5];
+    uint16_t _stepIntervals[5];
+    
+    // Pin definitions
+    static const uint8_t STEP_PINS[5];
+    static const uint8_t DIRECTION_PINS[5];
+    
+    // Direction inversion flags - to handle hardware wiring differences
+    static const bool INVERT_DIRECTION[5];
+    
+    // Microstepping configuration
+    static const uint16_t STEPS_PER_REV_MOTOR3;
+    static const uint16_t STEPS_PER_REV_OTHER_MOTORS;
+    
+    // Calculate step interval from RPM
+    uint16_t _calculateStepInterval(uint8_t motorID, uint8_t rpm);
+    
+    // Get steps per revolution for a motor
+    uint16_t _getStepsPerRev(uint8_t motorID);
 };
 
 #endif
