@@ -22,6 +22,9 @@ class StepperMotorController {
     // Stops the specified motor (1 to 5).
     void StopMotor(uint8_t motorID);
 
+    // Total number of motors.
+    static const uint8_t MAX_MOTORS = 5;
+
   private:
     // Motor pin definitions for 5 motors
     static const uint8_t MOTOR1_STEP_PIN = 2;
@@ -34,9 +37,6 @@ class StepperMotorController {
     static const uint8_t MOTOR4_DIR_PIN  = 9;
     static const uint8_t MOTOR5_STEP_PIN = 10;
     static const uint8_t MOTOR5_DIR_PIN  = 11;
-    
-    // Total number of motors.
-    static const uint8_t MAX_MOTORS = 5;
     
     // Arrays for motor state.
     bool motorRunning[MAX_MOTORS];
