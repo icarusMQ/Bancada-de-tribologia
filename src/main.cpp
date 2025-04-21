@@ -7,7 +7,7 @@ StepperMotorController motorController;
 
 // Experiment parameters
 const float TARGET_FORCE_FREE_SPHERE = 0.3; // Target force for free sphere (N)
-const int PUMP_RPM = 10;                    // Pump speed to achieve 30 drops/min
+const int PUMP_RPM = 0.5;                    // Pump speed to achieve 30 drops/min
 const int ROTATION_RPM = 80;                // Rotation speed for axes (RPM)
 
 // Experiment state
@@ -42,24 +42,25 @@ void loop() {
       forceAdjusted = true;
       Serial.println("Free sphere force adjusted to target.");
     }
-    delay(100); // Small delay for adjustment
     return; // Exit loop to avoid running other steps prematurely
   }
 
   // Step 2: Start the pumps
-  if ((!pumpsStarted) && forceAdjusted) {
+  if (forceAdjusted) {
     motorController.RunMotor(1, PUMP_RPM, HIGH); // Start pump 1
     motorController.RunMotor(2, PUMP_RPM, HIGH); // Start pump 2
     pumpsStarted = true;
     Serial.println("Pumps started.");
+    return; // Exit loop to avoid running other steps prematurely
   }
 
   // Step 3: Start the rotation of the axes
-  if ((!rotationStarted) && pumpsStarted) {
+  if (pumpsStarted) {
     motorController.RunMotor(3, ROTATION_RPM, HIGH); // Start free sphere axis
     motorController.RunMotor(4, ROTATION_RPM, HIGH); // Start fixed sphere axis
     rotationStarted = true;
     Serial.println("Rotation started.");
+    return; // Exit loop to avoid running other steps prematurely
   }
 
   // Step 4: Monitor and log sensor values
@@ -83,5 +84,5 @@ void loop() {
   Serial.print(value4, 2);
   Serial.println(); // Ends the line with \r\n
 
-  delay(500); // Adjust the delay as needed
+  delay(50); // Adjust the delay as needed
 }
