@@ -1,5 +1,5 @@
-#include "MultiScaleSensors.h"
-#include "StepperMotorController.h"
+#include <MultiScaleSensors.h>
+#include <StepperMotorController.h>
 
 // Create instances of the libraries.
 MultiScaleSensors sensors;
