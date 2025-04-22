@@ -1,8 +1,8 @@
 #include "StepperMotorController.h"
 
 // Define motor pin arrays
-const uint8_t StepperMotorController::STEP_PINS[5] = {10, 5, A5, A2, A1};
-const uint8_t StepperMotorController::DIRECTION_PINS[5] = {9, 9, A0, A4, A3};
+const uint8_t StepperMotorController::STEP_PINS[5] = {A5, A3, A1, 5, 9};
+const uint8_t StepperMotorController::DIRECTION_PINS[5] = {A4, A2, A0, 8, 8};
 
 // Direction inversion flags - set to true if a motor's direction is reversed
 // This addresses hardware-specific wiring issues without changing the code
