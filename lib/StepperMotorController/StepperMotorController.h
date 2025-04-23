@@ -50,10 +50,7 @@ class StepperMotorController {
     AccelStepper motor5;
 
     // Helper function to convert RPM to steps per second
-    float rpmToStepsPerSecond(int rpm);
-
-    // Assuming 200 steps per revolution for calculation
-    const int stepsPerRevolution = 200;
+    float rpmToStepsPerSecond(int rpm, int steps); // Added steps parameter
 
     // Remove old private methods declarations
     // void setMotorSpeed(uint8_t stepPin, uint8_t dirPin, int rpm, uint8_t direction);

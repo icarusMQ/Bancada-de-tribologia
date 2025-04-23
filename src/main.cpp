@@ -9,7 +9,7 @@ StepperMotorController motorController;
 const float TARGET_FORCE_FREE_SPHERE = 0.3; // Target force for free sphere (N)
 const float PUMP_RPM = 0.5;                    // Pump speed to achieve 30 drops/min (use float for low RPM)
 const int ROTATION_RPM = 80;                // Rotation speed for axes (RPM)
-const int MANUAL_MOVE_RPM = 60;             // RPM for manual control
+const int MA_RPM = 60;             // RPM for manual control
 
 // Define constants for motor and sensor mappings
 const int MPFix = 1;
@@ -52,7 +52,7 @@ void loop() {
   // ******************************************
 
   // Check for serial input
-  if (Serial.available()) {
+  if (Serial.available() && !adjustingForce) {
     String command = Serial.readStringUntil('\n');
     command.trim(); // Remove potential whitespace
 
@@ -64,7 +64,6 @@ void loop() {
     if (!adjustingForce) { // Don't stop motor 5 if it's adjusting force
         motorController.StopMotor(MAFix);
     }
-
 
     if (command == "start") {
         Serial.println("Starting experiment.");
@@ -79,7 +78,6 @@ void loop() {
         motorController.StopMotor(MA);
         motorController.StopMotor(MAFre);
         motorController.StopMotor(MAFix);
-
     } else if (command == "stop") {
         Serial.println("Stopping experiment.");
         experimentRunning = false;
@@ -90,7 +88,6 @@ void loop() {
         motorController.StopMotor(MA);
         motorController.StopMotor(MAFre);
         motorController.StopMotor(MAFix);
-
     } else if (command == "print") {
         Serial.println("Print scale readings");
         double value1 = sensors.ReadSensor(SFix);
@@ -105,37 +102,52 @@ void loop() {
         Serial.print(value3, 2);
         Serial.print(", scale4: ");
         Serial.println(value4, 2);
-
-    } else if (command == "q") { // Motor 1 forward
-        Serial.println("Moving Motor 1 forward.");
-        motorController.RunMotor(MPFix, MANUAL_MOVE_RPM);
-    } else if (command == "a") { // Motor 1 backward
-        Serial.println("Moving Motor 1 backward.");
-        motorController.RunMotor(MPFix, -MANUAL_MOVE_RPM);
-    } else if (command == "w") { // Motor 2 forward
-        Serial.println("Moving Motor 2 forward.");
-        motorController.RunMotor(MPFre, MANUAL_MOVE_RPM);
-    } else if (command == "s") { // Motor 2 backward
-        Serial.println("Moving Motor 2 backward.");
-        motorController.RunMotor(MPFre, -MANUAL_MOVE_RPM);
-    } else if (command == "e") { // Motor 3 forward
-        Serial.println("Moving Motor 3 forward.");
-        motorController.RunMotor(MA, MANUAL_MOVE_RPM);
-    } else if (command == "d") { // Motor 3 backward
-        Serial.println("Moving Motor 3 backward.");
-        motorController.RunMotor(MA, -MANUAL_MOVE_RPM);
-    } else if (command == "r") { // Motor 4 forward
-        Serial.println("Moving Motor 4 forward.");
-        motorController.RunMotor(MAFre, MANUAL_MOVE_RPM);
-    } else if (command == "f") { // Motor 4 backward
-        Serial.println("Moving Motor 4 backward.");
-        motorController.RunMotor(MAFre, -MANUAL_MOVE_RPM);
-    } else if (command == "t") { // Motor 5 forward
-        Serial.println("Moving Motor 5 forward.");
-        motorController.RunMotor(MAFix, MANUAL_MOVE_RPM);
-    } else if (command == "g") { // Motor 5 backward
-        Serial.println("Moving Motor 5 backward.");
-        motorController.RunMotor(MAFix, -MANUAL_MOVE_RPM);
+    } else if (command.length() == 1) { // Handle single-character commands
+        switch (command[0]) {
+            case 'q': // Motor 1 forward
+                Serial.println("Moving Motor 1 forward.");
+                motorController.RunMotor(MPFix, MA_RPM);
+                break;
+            case 'a': // Motor 1 backward
+                Serial.println("Moving Motor 1 backward.");
+                motorController.RunMotor(MPFix, -MA_RPM);
+                break;
+            case 'w': // Motor 2 forward
+                Serial.println("Moving Motor 2 forward.");
+                motorController.RunMotor(MPFre, MA_RPM);
+                break;
+            case 's': // Motor 2 backward
+                Serial.println("Moving Motor 2 backward.");
+                motorController.RunMotor(MPFre, -MA_RPM);
+                break;
+            case 'e': // Motor 3 forward
+                Serial.println("Moving Motor 3 forward.");
+                motorController.RunMotor(MA, MA_RPM);
+                break;
+            case 'd': // Motor 3 backward
+                Serial.println("Moving Motor 3 backward.");
+                motorController.RunMotor(MA, -MA_RPM);
+                break;
+            case 'r': // Motor 4 forward
+                Serial.println("Moving Motor 4 forward.");
+                motorController.RunMotor(MAFre, MA_RPM);
+                break;
+            case 'f': // Motor 4 backward
+                Serial.println("Moving Motor 4 backward.");
+                motorController.RunMotor(MAFre, -MA_RPM);
+                break;
+            case 't': // Motor 5 forward
+                Serial.println("Moving Motor 5 forward.");
+                motorController.RunMotor(MAFix, MA_RPM);
+                break;
+            case 'g': // Motor 5 backward
+                Serial.println("Moving Motor 5 backward.");
+                motorController.RunMotor(MAFix, -MA_RPM);
+                break;
+            default:
+                Serial.println("Unknown command.");
+                break;
+        }
     } else {
         Serial.println("Unknown command.");
     }
@@ -153,7 +165,7 @@ void loop() {
     static ForceAdjustmentState forceState = IDLE; // Keep state between loop iterations
     const float FORCE_TOLERANCE = 0.03; // Tolerance band around the target force (N)
     const float MIN_ADJUST_RPM = 1.0;   // Minimum speed for adjustment motor
-    const float MAX_ADJUST_RPM = MANUAL_MOVE_RPM; // Maximum speed for adjustment motor
+    const float MAX_ADJUST_RPM = MA_RPM; // Maximum speed for adjustment motor
     const float FORCE_PROPORTIONAL_GAIN = 50.0; // Proportional gain (tune this value) - higher means faster response for larger errors
 
     if (!forceAdjusted) {
@@ -196,7 +208,7 @@ void loop() {
          Serial.println(targetSpeed);
          lastAdjustmentDirection = 1; // Mark as moving UP
         }
-        motorController.RunMotor(MA, targetSpeed); // Positive speed assumed for UP
+        motorController.RunMotor(MA, -targetSpeed); // Positive speed assumed for UP
       } else { // error < 0
         // Force is too high, need to decrease (move motor 5 backward - verify direction!)
          if (lastAdjustmentDirection != -1) { // Print only when changing direction/starting to move DOWN
@@ -208,10 +220,12 @@ void loop() {
          Serial.println(targetSpeed);
          lastAdjustmentDirection = -1; // Mark as moving DOWN
          }
-        motorController.RunMotor(MA, -targetSpeed); // Negative speed for reverse
+        motorController.RunMotor(MA, targetSpeed); // Negative speed for reverse
       }
       forceAdjusted = false; // Ensure we stay in this adjustment step
+      return; // Skip to next loop iteration to avoid running pumps/rotation
       }
+      return; // Skip to next loop iteration to avoid running pumps/rotation
     }
     // --- End Force Adjustment State Machine ---
 
@@ -258,5 +272,4 @@ void loop() {
 
   // Add a small delay to prevent overwhelming the serial port,
   // but keep it short enough for smooth motor operation.
-  delay(10);
 }

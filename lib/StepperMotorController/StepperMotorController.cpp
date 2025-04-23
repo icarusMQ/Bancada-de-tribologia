@@ -23,29 +23,40 @@ StepperMotorController::StepperMotorController() :
 }
 
 // Helper function to convert RPM to steps per second
-float StepperMotorController::rpmToStepsPerSecond(int rpm) {
-    // Assuming 200 steps per revolution
-    return (float)stepsPerRevolution * rpm / 60.0;
+float StepperMotorController::rpmToStepsPerSecond(int rpm, int steps) { // Added steps parameter
+    // Use the provided steps per revolution
+    return (float)steps * rpm / 60.0;
 }
 
 // Sets the target speed for the specified motor.
 // Positive RPM for forward, negative RPM for reverse.
 void StepperMotorController::RunMotor(uint8_t motorID, int rpm) {
-  float speed = rpmToStepsPerSecond(rpm);
+  float speed;
+  int steps;
   switch (motorID) {
     case 1:
+      steps = 200; // Motor 1 steps
+      speed = rpmToStepsPerSecond(rpm, steps);
       motor1.setSpeed(speed);
       break;
     case 2:
+      steps = 200; // Motor 2 steps
+      speed = rpmToStepsPerSecond(rpm, steps);
       motor2.setSpeed(speed);
       break;
     case 3:
+      steps = 3200; // Motor 3 steps
+      speed = rpmToStepsPerSecond(rpm, steps);
       motor3.setSpeed(speed);
       break;
     case 4:
+      steps = 1600; // Motor 4 steps
+      speed = rpmToStepsPerSecond(rpm, steps);
       motor4.setSpeed(speed);
       break;
     case 5:
+      steps = 1600; // Motor 5 steps
+      speed = rpmToStepsPerSecond(rpm, steps);
       motor5.setSpeed(speed);
       break;
     default:
