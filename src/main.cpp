@@ -7,14 +7,28 @@ StepperMotorController motorController;
 
 // Experiment parameters
 const float TARGET_FORCE_FREE_SPHERE = 0.3; // Target force for free sphere (N)
-const int PUMP_RPM = 0.5;                    // Pump speed to achieve 30 drops/min
+const float PUMP_RPM = 0.5;                    // Pump speed to achieve 30 drops/min (use float for low RPM)
 const int ROTATION_RPM = 80;                // Rotation speed for axes (RPM)
+const int MANUAL_MOVE_RPM = 60;             // RPM for manual control
+
+// Define constants for motor and sensor mappings
+const int MPFix = 1;
+const int MPFre = 2;
+const int MA = 3;
+const int MAFre = 4;
+const int MAFix = 5;
+
+const int SFix = 1;
+const int SFiz = 2;
+const int SFrx = 3;
+const int SFrz = 4;
 
 // Experiment state
 bool forceAdjusted = false;
 bool pumpsStarted = false;
 bool rotationStarted = false;
 bool experimentRunning = false;
+bool adjustingForce = false; // Flag to indicate force adjustment motor is active
 
 void setup() {
   Serial.begin(115200);
@@ -27,177 +41,222 @@ void setup() {
   } else {
     Serial.println("Sensors initialized successfully.");
     Serial.println(" Use \"start\" to start, \"stop\" to stop, or print to print scale readings.");
+    Serial.println(" Manual controls: q/a (M1), w/s (M2), e/d (M3), r/f (M4), t/g (M5)");
   }
 }
 
 void loop() {
+  // **** THIS IS CRUCIAL for AccelStepper ****
+  // Update all motor positions/speeds frequently
+  motorController.UpdateMotors();
+  // ******************************************
+
   // Check for serial input
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
+    command.trim(); // Remove potential whitespace
 
-    switch (command[0]) { // Use the first character of the command for the switch
-      case 's': // "start"
-        if (command == "start") {
-          Serial.println("Starting experiment.");
-          experimentRunning = true;
-          forceAdjusted = false; // Reset state for new experiment
-          pumpsStarted = false;
-          rotationStarted = false;
+    // Stop any manual movement before processing new command
+    motorController.StopMotor(MPFix);
+    motorController.StopMotor(MPFre);
+    motorController.StopMotor(MA);
+    motorController.StopMotor(MAFre);
+    if (!adjustingForce) { // Don't stop motor 5 if it's adjusting force
+        motorController.StopMotor(MAFix);
+    }
 
-        } else if (command == "stop") { // "stop"
-          Serial.println("Stopping experiment.");
-          experimentRunning = false;
 
-        } else if (command == "s") { // "s" move motor 2 backwards
-          Serial.println("Moving Motor 2 backward.");
-          motorController.RunMotor(2, 10, LOW);
-          delay(1000); // Run for 1 second
-          motorController.StopMotor(2); // Stop motor after 1 second
-        }
-        break;
+    if (command == "start") {
+        Serial.println("Starting experiment.");
+        experimentRunning = true;
+        forceAdjusted = false; // Reset state for new experiment
+        pumpsStarted = false;
+        rotationStarted = false;
+        adjustingForce = false;
+        // Stop all motors initially
+        motorController.StopMotor(MPFix);
+        motorController.StopMotor(MPFre);
+        motorController.StopMotor(MA);
+        motorController.StopMotor(MAFre);
+        motorController.StopMotor(MAFix);
 
-      case 'p': // "print"
-        if (command == "print") {
-          Serial.println("Print scale readings");
-          double value1 = sensors.ReadSensor(1);
-          double value2 = sensors.ReadSensor(2);
-          double value3 = sensors.ReadSensor(3);
-          double value4 = sensors.ReadSensor(4);
-          printf("scale1: %.2f, scale2: %.2f, scale3: %.2f, scale4: %.2f\n", value1, value2, value3, value4);
-        }
-        break;
-      
-      case 'q': // "move Motor 1 forward"
+    } else if (command == "stop") {
+        Serial.println("Stopping experiment.");
+        experimentRunning = false;
+        adjustingForce = false;
+        // Stop all motors
+        motorController.StopMotor(MPFix);
+        motorController.StopMotor(MPFre);
+        motorController.StopMotor(MA);
+        motorController.StopMotor(MAFre);
+        motorController.StopMotor(MAFix);
+
+    } else if (command == "print") {
+        Serial.println("Print scale readings");
+        double value1 = sensors.ReadSensor(SFix);
+        double value2 = sensors.ReadSensor(SFiz);
+        double value3 = sensors.ReadSensor(SFrx);
+        double value4 = sensors.ReadSensor(SFrz);
+        Serial.print("scale1: ");
+        Serial.print(value1, 2);
+        Serial.print(", scale2: ");
+        Serial.print(value2, 2);
+        Serial.print(", scale3: ");
+        Serial.print(value3, 2);
+        Serial.print(", scale4: ");
+        Serial.println(value4, 2);
+
+    } else if (command == "q") { // Motor 1 forward
         Serial.println("Moving Motor 1 forward.");
-        motorController.RunMotor(1, 10, HIGH);
-        delay(1000); // Run for 1 second
-        motorController.StopMotor(1); // Stop motor after 1 second
-        break;
-
-      case 'a': // "reverse Motor 1"
+        motorController.RunMotor(MPFix, MANUAL_MOVE_RPM);
+    } else if (command == "a") { // Motor 1 backward
         Serial.println("Moving Motor 1 backward.");
-        motorController.RunMotor(1, 10, LOW);
-        delay(1000);
-        motorController.StopMotor(1);
-        break;
-      
-      case 'w': // "move Motor 2 forward"
+        motorController.RunMotor(MPFix, -MANUAL_MOVE_RPM);
+    } else if (command == "w") { // Motor 2 forward
         Serial.println("Moving Motor 2 forward.");
-        motorController.RunMotor(2, 10, HIGH);
-        delay(1000); // Run for 1 second
-        motorController.StopMotor(2); // Stop motor after 1 second
-        break;
-      
-      case 'e': // "move motor 2 forward"
-       Serial.println("Moving Motor 3 forward.");
-        motorController.RunMotor(3, 10, HIGH);
-        delay(1000); // Run for 1 second
-        motorController.StopMotor(3); // Stop motor after 1 second
-        break;
-      
-      case 'd': // "reverse Motor 3"
+        motorController.RunMotor(MPFre, MANUAL_MOVE_RPM);
+    } else if (command == "s") { // Motor 2 backward
+        Serial.println("Moving Motor 2 backward.");
+        motorController.RunMotor(MPFre, -MANUAL_MOVE_RPM);
+    } else if (command == "e") { // Motor 3 forward
+        Serial.println("Moving Motor 3 forward.");
+        motorController.RunMotor(MA, MANUAL_MOVE_RPM);
+    } else if (command == "d") { // Motor 3 backward
         Serial.println("Moving Motor 3 backward.");
-        motorController.RunMotor(3, 10, LOW);
-        delay(1000);
-        motorController.StopMotor(3);
-        break;
-      
-      case 'r': // "move Motor 4 forward"
+        motorController.RunMotor(MA, -MANUAL_MOVE_RPM);
+    } else if (command == "r") { // Motor 4 forward
         Serial.println("Moving Motor 4 forward.");
-        motorController.RunMotor(4, 10, HIGH);
-        delay(1000); // Run for 1 second
-        motorController.StopMotor(4); // Stop motor after 1 second
-        break;
-      
-      case 'f': // "reverse Motor 4"
+        motorController.RunMotor(MAFre, MANUAL_MOVE_RPM);
+    } else if (command == "f") { // Motor 4 backward
         Serial.println("Moving Motor 4 backward.");
-        motorController.RunMotor(4, 10, LOW);
-        delay(1000);
-        motorController.StopMotor(4);
-        break;
-
-      case 't': // "move Motor 5 forward"
+        motorController.RunMotor(MAFre, -MANUAL_MOVE_RPM);
+    } else if (command == "t") { // Motor 5 forward
         Serial.println("Moving Motor 5 forward.");
-        motorController.RunMotor(5, 10, HIGH);
-        delay(1000); // Run for 1 second
-        motorController.StopMotor(5); // Stop motor after 1 second
-        break;
-      
-      case 'g': // "reverse Motor 5"
+        motorController.RunMotor(MAFix, MANUAL_MOVE_RPM);
+    } else if (command == "g") { // Motor 5 backward
         Serial.println("Moving Motor 5 backward.");
-        motorController.RunMotor(5, 10, LOW);
-        delay(1000);
-        motorController.StopMotor(5);
-        break;
-
-      default:
-        Serial.println("Unknown command. Use \"start\" to start, \"stop\" to stop, or print to print scale readings.");
-        break;
-    }
-  }
-
-  // Step 1: Adjust the free sphere force
-  if (!forceAdjusted && experimentRunning) {
-    float currentForce = sensors.ReadSensor(1); // Read load cell for free sphere
-    if (currentForce < TARGET_FORCE_FREE_SPHERE) {
-      motorController.RunMotor(5, 10, HIGH); // Adjust force motor
-      Serial.print("Adjusting force... Current: ");
-      Serial.print(currentForce, 2);
-      Serial.println(" N");
+        motorController.RunMotor(MAFix, -MANUAL_MOVE_RPM);
     } else {
-      motorController.StopMotor(5); // Stop motor once target force is reached
-      forceAdjusted = true;
-      Serial.println("Free sphere force adjusted to target.");
+        Serial.println("Unknown command.");
     }
-    return; // Exit loop to avoid running other steps prematurely
   }
 
-  // Step 2: Start the pumps
-  if (forceAdjusted && experimentRunning) {
-    motorController.RunMotor(1, PUMP_RPM, HIGH); // Start pump 1
-    motorController.RunMotor(2, PUMP_RPM, HIGH); // Start pump 2
-    pumpsStarted = true;
-    Serial.println("Pumps started.");
-    return; // Exit loop to avoid running other steps prematurely
-  }
+  // Experiment Logic
+  if (experimentRunning) {
+    // Step 1: Adjust the free sphere force
+    // --- Force Adjustment State Machine ---
+    enum ForceAdjustmentState {
+      IDLE,
+      ADJUSTING,
+      ADJUSTED
+    };
+    static ForceAdjustmentState forceState = IDLE; // Keep state between loop iterations
+    const float FORCE_TOLERANCE = 0.03; // Tolerance band around the target force (N)
+    const float MIN_ADJUST_RPM = 1.0;   // Minimum speed for adjustment motor
+    const float MAX_ADJUST_RPM = MANUAL_MOVE_RPM; // Maximum speed for adjustment motor
+    const float FORCE_PROPORTIONAL_GAIN = 50.0; // Proportional gain (tune this value) - higher means faster response for larger errors
 
-  // Step 3: Start the rotation of the axes
-  if (pumpsStarted && experimentRunning) {
-    motorController.RunMotor(3, ROTATION_RPM, HIGH); // Start free sphere axis
-    motorController.RunMotor(4, ROTATION_RPM, HIGH); // Start fixed sphere axis
-    rotationStarted = true;
-    Serial.println("Rotation started.");
-    return; 
-    // Exit loop to avoid running other steps prematurely
-  }
+    if (!forceAdjusted) {
+      float currentForce = sensors.ReadSensor(SFrx); // Read load cell for free sphere
+      float error = TARGET_FORCE_FREE_SPHERE - currentForce;
 
-  if (rotationStarted && experimentRunning) {
-    Serial.println("Experiment running. Send \"stop\" to stop.");
-  }
+      // Check if force is within the target tolerance
+      if (abs(error) <= FORCE_TOLERANCE) {
+      if (forceState == ADJUSTING) {
+        motorController.StopMotor(MA); // Stop adjustment motor
+        Serial.println("Force within tolerance.");
+        Serial.print("Final Force: ");
+        Serial.print(currentForce, 2);
+        Serial.println(" N");
+      }
+      forceState = ADJUSTED;
+      forceAdjusted = true; // Mark this step as complete
+      adjustingForce = false; // Ensure flag is reset
+      } else {
+      // Force needs adjustment
+      forceState = ADJUSTING;
+      adjustingForce = true; // Indicate motor 5 is active for adjustment
 
-  if(experimentRunning){
+      // Calculate speed based on error (proportional control)
+      float targetSpeed = MIN_ADJUST_RPM + FORCE_PROPORTIONAL_GAIN * abs(error);
+      // Clamp speed between min and max
+      targetSpeed = constrain(targetSpeed, MIN_ADJUST_RPM, MAX_ADJUST_RPM);
 
-  float value1 = sensors.ReadSensor(1);
-  float value2 = sensors.ReadSensor(2);
-  float value3 = sensors.ReadSensor(3);
-  float value4 = sensors.ReadSensor(4);
+      // Keep track of the last commanded direction for motor 5
+      static int lastAdjustmentDirection = 0; // 0 = stopped/unknown, 1 = UP (positive error), -1 = DOWN (negative error)
 
-  // Format the output for the Serial Plotter
-  Serial.print(">");
-  Serial.print("scale1:");
-  Serial.print(value1, 2);
-  Serial.print(",");
-  Serial.print("scale2:");
-  Serial.print(value2, 2);
-  Serial.print(",");
-  Serial.print("scale3:");
-  Serial.print(value3, 2);
-  Serial.print(",");
-  Serial.print("scale4:");
-  Serial.print(value4, 2);
-  Serial.println(); // Ends the line with \r\n
-  }
-  
+      if (error > 0) {
+        // Force is too low, need to increase (move motor 5 forward - verify direction!)
+        if (lastAdjustmentDirection != 1) { // Print only when changing direction/starting to move UP
+         Serial.print("Adjusting force UP. Current: ");
+         Serial.print(currentForce, 2);
+         Serial.print(" N, Target: ");
+         Serial.print(TARGET_FORCE_FREE_SPHERE);
+         Serial.print(" N, Speed: ");
+         Serial.println(targetSpeed);
+         lastAdjustmentDirection = 1; // Mark as moving UP
+        }
+        motorController.RunMotor(MA, targetSpeed); // Positive speed assumed for UP
+      } else { // error < 0
+        // Force is too high, need to decrease (move motor 5 backward - verify direction!)
+         if (lastAdjustmentDirection != -1) { // Print only when changing direction/starting to move DOWN
+         Serial.print("Adjusting force DOWN. Current: ");
+         Serial.print(currentForce, 2);
+         Serial.print(" N, Target: ");
+         Serial.print(TARGET_FORCE_FREE_SPHERE);
+         Serial.print(" N, Speed: ");
+         Serial.println(targetSpeed);
+         lastAdjustmentDirection = -1; // Mark as moving DOWN
+         }
+        motorController.RunMotor(MA, -targetSpeed); // Negative speed for reverse
+      }
+      forceAdjusted = false; // Ensure we stay in this adjustment step
+      }
+    }
+    // --- End Force Adjustment State Machine ---
 
-  delay(50); // Adjust the delay as needed
+    // Step 2: Start the pumps (only if force is adjusted and pumps not already started)
+    else if (!pumpsStarted) {
+      motorController.RunMotor(MPFix, PUMP_RPM); // Start pump 1
+      motorController.RunMotor(MPFre, PUMP_RPM); // Start pump 2
+      pumpsStarted = true;
+      Serial.println("Pumps started.");
+    }
+    // Step 3: Start the rotation of the axes (only if pumps started and rotation not already started)
+    else if (!rotationStarted) {
+      motorController.RunMotor(MA, ROTATION_RPM); // Start free sphere axis
+      motorController.RunMotor(MAFre, ROTATION_RPM); // Start fixed sphere axis
+      rotationStarted = true;
+      Serial.println("Rotation started.");
+      Serial.println("Experiment running. Send \"stop\" to stop.");
+    }
+
+    // Continuous Data Logging during experiment
+    if (rotationStarted) { // Log data only after rotation starts
+        float value1 = sensors.ReadSensor(SFix);
+        float value2 = sensors.ReadSensor(SFiz);
+        float value3 = sensors.ReadSensor(SFrx);
+        float value4 = sensors.ReadSensor(SFrz);
+
+        // Format the output for the Serial Plotter
+        Serial.print(">");
+        Serial.print("scale1:");
+        Serial.print(value1, 2);
+        Serial.print(",");
+        Serial.print("scale2:");
+        Serial.print(value2, 2);
+        Serial.print(",");
+        Serial.print("scale3:");
+        Serial.print(value3, 2);
+        Serial.print(",");
+        Serial.print("scale4:");
+        Serial.print(value4, 2);
+        Serial.println(); // Ends the line with \r\n
+    }
+  } // end if(experimentRunning)
+
+
+  // Add a small delay to prevent overwhelming the serial port,
+  // but keep it short enough for smooth motor operation.
+  delay(10);
 }
