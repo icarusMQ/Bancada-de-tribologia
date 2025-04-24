@@ -10,6 +10,9 @@ const float TARGET_FORCE_FREE_SPHERE = 0.3; // Target force for free sphere (N)
 const float PUMP_RPM = 0.5;                    // Pump speed to achieve 30 drops/min (use float for low RPM)
 const int ROTATION_RPM = 80;                // Rotation speed for axes (RPM)
 const int MA_RPM = 60;             // RPM for manual control
+const float FORCE_TOLERANCE = 0.03; // Tolerance band around the target force (N)
+const float MAX_ADJUST_RPM = MA_RPM; // Maximum speed for adjustment motor
+const float ADJUSTMENT_SPEED = MAX_ADJUST_RPM; // Fixed speed for adjustment
 
 // Define constants for motor and sensor mappings
 const int MPFix = 1;
@@ -28,7 +31,67 @@ bool forceAdjusted = false;
 bool pumpsStarted = false;
 bool rotationStarted = false;
 bool experimentRunning = false;
-bool adjustingForce = false; // Flag to indicate force adjustment motor is active
+
+// Function to adjust force using a blocking loop
+void adjustFreeSphereForce(float targetForce, float tolerance) {
+  Serial.println("Starting force adjustment...");
+  bool adjustmentInterrupted = false;
+
+  while (true) {
+    // **** THIS IS CRUCIAL for AccelStepper ****
+    // Update motor positions/speeds frequently, even during adjustment
+    motorController.UpdateMotors();
+    // ******************************************
+
+    // Check for serial input to allow interruption
+    if (Serial.available()) {
+      String command = Serial.readStringUntil('\n');
+      command.trim();
+      if (command == "stop") {
+        Serial.println("Force adjustment interrupted by user.");
+        motorController.StopMotor(MA); // Stop the adjustment motor
+        experimentRunning = false; // Stop the overall experiment
+        adjustmentInterrupted = true;
+        break; // Exit the adjustment loop
+      } else {
+        Serial.print("Command '");
+        Serial.print(command);
+        Serial.println("' ignored during force adjustment. Use 'stop' to interrupt.");
+      }
+    }
+
+    float currentForce = sensors.ReadSensor(SFrx); // Read load cell
+    Serial.print("Current Force: ");
+    Serial.print(currentForce, 2);
+    float error = targetForce - currentForce;
+
+    // Check if force is within the target tolerance
+    if (abs(error) <= tolerance) {
+      motorController.StopMotor(MA); // Stop adjustment motor
+      Serial.println("Force within tolerance.");
+      Serial.print("Final Force: ");
+      Serial.print(currentForce, 2);
+      Serial.println(" N");
+      break; // Exit the adjustment loop
+    }
+
+    // Force needs adjustment - Use fixed speed
+    if (error > 0) {
+      // Force is too low, need to increase (move motor UP - verify direction!)
+      motorController.RunMotor(MA, -ADJUSTMENT_SPEED); // Negative speed assumed for UP, use fixed speed
+    } else { // error < 0
+      // Force is too high, need to decrease (move motor DOWN - verify direction!)
+      motorController.RunMotor(MA, ADJUSTMENT_SPEED); // Positive speed assumed for DOWN, use fixed speed
+    }
+
+    // Small delay to prevent overwhelming the loop and allow serial check
+    //delay(1);
+  }
+
+  if (!adjustmentInterrupted) {
+    Serial.println("Force adjustment complete.");
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -51,19 +114,17 @@ void loop() {
   motorController.UpdateMotors();
   // ******************************************
 
-  // Check for serial input
-  if (Serial.available() && !adjustingForce) {
+  // Check for serial input (only if experiment is NOT running or already past force adjustment)
+  // Force adjustment loop handles its own serial check for 'stop'
+  if (Serial.available() && (!experimentRunning || forceAdjusted)) {
     String command = Serial.readStringUntil('\n');
     command.trim(); // Remove potential whitespace
 
     // Stop any manual movement before processing new command
     motorController.StopMotor(MPFix);
     motorController.StopMotor(MPFre);
-    motorController.StopMotor(MA);
     motorController.StopMotor(MAFre);
-    if (!adjustingForce) { // Don't stop motor 5 if it's adjusting force
-        motorController.StopMotor(MAFix);
-    }
+    motorController.StopMotor(MAFix);
 
     if (command == "start") {
         Serial.println("Starting experiment.");
@@ -71,7 +132,6 @@ void loop() {
         forceAdjusted = false; // Reset state for new experiment
         pumpsStarted = false;
         rotationStarted = false;
-        adjustingForce = false;
         // Stop all motors initially
         motorController.StopMotor(MPFix);
         motorController.StopMotor(MPFre);
@@ -81,7 +141,6 @@ void loop() {
     } else if (command == "stop") {
         Serial.println("Stopping experiment.");
         experimentRunning = false;
-        adjustingForce = false;
         // Stop all motors
         motorController.StopMotor(MPFix);
         motorController.StopMotor(MPFre);
@@ -102,7 +161,7 @@ void loop() {
         Serial.print(value3, 2);
         Serial.print(", scale4: ");
         Serial.println(value4, 2);
-    } else if (command.length() == 1) { // Handle single-character commands
+    } else if (command.length() == 1 && !experimentRunning) { // Only allow manual control if experiment not running
         switch (command[0]) {
             case 'q': // Motor 1 forward
                 Serial.println("Moving Motor 1 forward.");
@@ -148,86 +207,26 @@ void loop() {
                 Serial.println("Unknown command.");
                 break;
         }
-    } else {
+    } else if (command.length() == 1 && experimentRunning) {
+         Serial.println("Manual motor control disabled while experiment is running. Use 'stop' first.");
+    }
+     else {
         Serial.println("Unknown command.");
     }
   }
 
   // Experiment Logic
   if (experimentRunning) {
-    // Step 1: Adjust the free sphere force
-    // --- Force Adjustment State Machine ---
-    enum ForceAdjustmentState {
-      IDLE,
-      ADJUSTING,
-      ADJUSTED
-    };
-    static ForceAdjustmentState forceState = IDLE; // Keep state between loop iterations
-    const float FORCE_TOLERANCE = 0.03; // Tolerance band around the target force (N)
-    const float MIN_ADJUST_RPM = 1.0;   // Minimum speed for adjustment motor
-    const float MAX_ADJUST_RPM = MA_RPM; // Maximum speed for adjustment motor
-    const float FORCE_PROPORTIONAL_GAIN = 50.0; // Proportional gain (tune this value) - higher means faster response for larger errors
-
+    // Step 1: Adjust the free sphere force (runs until complete or interrupted)
     if (!forceAdjusted) {
-      float currentForce = sensors.ReadSensor(SFrx); // Read load cell for free sphere
-      float error = TARGET_FORCE_FREE_SPHERE - currentForce;
-
-      // Check if force is within the target tolerance
-      if (abs(error) <= FORCE_TOLERANCE) {
-      if (forceState == ADJUSTING) {
-        motorController.StopMotor(MA); // Stop adjustment motor
-        Serial.println("Force within tolerance.");
-        Serial.print("Final Force: ");
-        Serial.print(currentForce, 2);
-        Serial.println(" N");
-      }
-      forceState = ADJUSTED;
-      forceAdjusted = true; // Mark this step as complete
-      adjustingForce = false; // Ensure flag is reset
+      adjustFreeSphereForce(TARGET_FORCE_FREE_SPHERE, FORCE_TOLERANCE);
+      // If adjustFreeSphereForce was interrupted by 'stop', experimentRunning will be false.
+      if (experimentRunning) {
+          forceAdjusted = true; // Mark as complete only if not interrupted
       } else {
-      // Force needs adjustment
-      forceState = ADJUSTING;
-      adjustingForce = true; // Indicate motor 5 is active for adjustment
-
-      // Calculate speed based on error (proportional control)
-      float targetSpeed = MIN_ADJUST_RPM + FORCE_PROPORTIONAL_GAIN * abs(error);
-      // Clamp speed between min and max
-      targetSpeed = constrain(targetSpeed, MIN_ADJUST_RPM, MAX_ADJUST_RPM);
-
-      // Keep track of the last commanded direction for motor 5
-      static int lastAdjustmentDirection = 0; // 0 = stopped/unknown, 1 = UP (positive error), -1 = DOWN (negative error)
-
-      if (error > 0) {
-        // Force is too low, need to increase (move motor 5 forward - verify direction!)
-        if (lastAdjustmentDirection != 1) { // Print only when changing direction/starting to move UP
-         Serial.print("Adjusting force UP. Current: ");
-         Serial.print(currentForce, 2);
-         Serial.print(" N, Target: ");
-         Serial.print(TARGET_FORCE_FREE_SPHERE);
-         Serial.print(" N, Speed: ");
-         Serial.println(targetSpeed);
-         lastAdjustmentDirection = 1; // Mark as moving UP
-        }
-        motorController.RunMotor(MA, -targetSpeed); // Positive speed assumed for UP
-      } else { // error < 0
-        // Force is too high, need to decrease (move motor 5 backward - verify direction!)
-         if (lastAdjustmentDirection != -1) { // Print only when changing direction/starting to move DOWN
-         Serial.print("Adjusting force DOWN. Current: ");
-         Serial.print(currentForce, 2);
-         Serial.print(" N, Target: ");
-         Serial.print(TARGET_FORCE_FREE_SPHERE);
-         Serial.print(" N, Speed: ");
-         Serial.println(targetSpeed);
-         lastAdjustmentDirection = -1; // Mark as moving DOWN
-         }
-        motorController.RunMotor(MA, targetSpeed); // Negative speed for reverse
+          return; // Skip rest of the loop if stopped during adjustment
       }
-      forceAdjusted = false; // Ensure we stay in this adjustment step
-      return; // Skip to next loop iteration to avoid running pumps/rotation
-      }
-      return; // Skip to next loop iteration to avoid running pumps/rotation
     }
-    // --- End Force Adjustment State Machine ---
 
     // Step 2: Start the pumps (only if force is adjusted and pumps not already started)
     else if (!pumpsStarted) {
@@ -238,6 +237,9 @@ void loop() {
     }
     // Step 3: Start the rotation of the axes (only if pumps started and rotation not already started)
     else if (!rotationStarted) {
+      // NOTE: MA motor (Motor 3) was used for force adjustment. Now it's used for rotation.
+      // Ensure it's stopped from adjustment before starting rotation if needed,
+      // although adjustFreeSphereForce should handle stopping it.
       motorController.RunMotor(MA, ROTATION_RPM); // Start free sphere axis
       motorController.RunMotor(MAFre, ROTATION_RPM); // Start fixed sphere axis
       rotationStarted = true;
@@ -272,4 +274,5 @@ void loop() {
 
   // Add a small delay to prevent overwhelming the serial port,
   // but keep it short enough for smooth motor operation.
+  delay(1); // Reduced delay as adjust loop has its own
 }
